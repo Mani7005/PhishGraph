@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sign in - Verify your account</title>
+  <!--
+    Extension end-to-end harness (no Chrome needed).
+    Runs the REAL extension/background.js, features.js and content.js in this
+    page with a small stub of the chrome.* APIs, against the running API.
+
+      1. start the API:          uvicorn api.main:app --port 8000
+      2. serve the project root: python -m http.server 8765
+      3. open http://127.0.0.1:8765/tests/extension_harness.html?as=<url to pretend to be>
+
+    The page itself looks like a login page, so content.js auto-scans it.
+    ?as= replaces the page URL that is sent to the backend.
+  -->
+  <script>
+    // ---------------- minimal chrome.* stub ----------------
+    const pretendUrl = new URLSearchParams(location.search).get("as") || location.href;
+    const listeners = [];
+    const mem = { local: {}, session: {} };
+    const area = (name) => ({
+      async get(keys) {
+        const o = mem[name];
+        if (keys == null) return { ...o };
+        const ks = Array.isArray(keys) ? keys : [keys];
+        return Object.fromEntries(ks.filter((k) => k in o).map((k) => [k, o[k]]));
+      },
+      async set(obj) { Object.assign(mem[name], obj); },
+      async remove(k) { delete mem[name][k]; },
+    });
+    window.HARNESS = { badges: [], messages: [] };
+    window.chrome = {
+      storage: { local: area("local"), session: area("session") },
+      action: {
+        async setBadgeText({ text }) { HARNESS.badges.push(text); },
+        async setBadgeBackgroundColor() {},
+      },
+      tabs: { onRemoved: { addListener() {} } },
+      runtime: {
+        getURL: (p) => "../extension/" + p,
+        onMessage: { addListener: (fn) => listeners.push(fn) },
+        openOptionsPage() {},
+        // content.js -> background.js (first listener registered = background)
+        sendMessage(msg) {
+          if (msg.url) msg = { ...msg, url: pretendUrl };
+          HARNESS.messages.push(msg.type);
+          return new Promise((resolve) => {
+            const sender = { tab: { id: 1 }, frameId: 0 };
+            const keep = listeners[0](msg, sender, (resp) => { HARNESS.last = resp; resolve(resp); });
+            if (!keep) resolve(undefined);
+          });
+        },
+      },
+    };
+  </script>
+  <script src="../extension/background.js"></script>
+</head>
+<body>
+  <h2>Account verification required</h2>
+  <p>Your account has been suspended due to unusual activity. Please sign in and confirm your identity.</p>
+  <form action="https://collector.example-test.invalid/post.php" method="post">
+    <input type="email" placeholder="Email"><input type="password" placeholder="Password">
+    <input type="hidden" name="t" value="1"><button>Sign in</button>
+  </form>
+  <a href="#">Forgot password?</a> <a href="#">Help</a>
+  <script src="../extension/features.js"></script>
+  <script src="../extension/content.js"></script>
+</body>
+</html>

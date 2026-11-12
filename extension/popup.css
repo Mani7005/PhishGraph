@@ -1,0 +1,37 @@
+:root { --red: #b3261e; --amber: #c88a00; --green: #1e8e3e; --grey: #6b7280; --line: #e5e7eb; }
+* { box-sizing: border-box; }
+body { width: 360px; margin: 0; font: 13px/1.45 system-ui, "Segoe UI", Arial, sans-serif; color: #1f2937; }
+header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+header img { width: 22px; height: 22px; }
+h1 { font-size: 15px; margin: 0; flex: 1; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--grey); }
+.dot.ok { background: var(--green); } .dot.down { background: var(--red); }
+main { padding: 12px 14px; min-height: 90px; }
+.host { font-weight: 600; word-break: break-all; margin-bottom: 8px; color: #374151; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.card.phishing { background: #fdecec; border-color: #f5c2c0; }
+.card.suspicious { background: #fff7e0; border-color: #f3dd9b; }
+.card.safe, .card.trusted { background: #eaf7ee; border-color: #bfe5ca; }
+.row { display: flex; justify-content: space-between; align-items: baseline; }
+.verdict { font-size: 17px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+.phishing .verdict { color: var(--red); } .suspicious .verdict { color: var(--amber); }
+.safe .verdict, .trusted .verdict { color: var(--green); }
+.prob { font-size: 13px; color: #374151; }
+.meter { height: 6px; background: #e5e7eb; border-radius: 3px; margin: 8px 0; overflow: hidden; }
+.meter div { height: 100%; width: 0; background: var(--green); transition: width .3s; }
+.phishing .meter div { background: var(--red); } .suspicious .meter div { background: var(--amber); }
+.parts, .infra { font-size: 12px; color: #4b5563; }
+.infra { margin-top: 8px; border-top: 1px dashed #d1d5db; padding-top: 6px; }
+h3 { font-size: 12px; text-transform: uppercase; color: #6b7280; margin: 10px 0 4px; }
+ul { margin: 0; padding-left: 18px; } li { margin: 3px 0; }
+li.safe::marker { color: var(--green); } li.phishing::marker { color: var(--red); }
+.tag { font-size: 10px; color: #6b7280; border: 1px solid #d1d5db; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+.message { color: #4b5563; margin-top: 6px; }
+.message.err { color: var(--red); }
+footer { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+button { font: 600 13px system-ui; border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.primary { background: #1d4ed8; color: #fff; border: 0; }
+.secondary { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+button:disabled { opacity: .6; cursor: default; }
+footer a { margin-left: auto; color: #1d4ed8; text-decoration: none; }
+.hidden { display: none; }

@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>PhishGraph feature parity</title>
+<style>body{font:14px system-ui;margin:20px} .ok{color:#1e8e3e} .bad{color:#b3261e} td,th{padding:2px 8px;text-align:left}</style>
+</head>
+<body>
+<h2>JS (extension/features.js) vs Python (content_features.py)</h2>
+<p>Serve the project root (<code>python -m http.server 8765</code>) and open
+<code>http://127.0.0.1:8765/tests/parity.html</code>. Expected values come from
+<code>tests/fixtures/expected_features.json</code> (written by pytest).</p>
+<div id="out">running…</div>
+<script src="../extension/features.js"></script>
+<script>
+(async () => {
+  const expected = await (await fetch("fixtures/expected_features.json")).json();
+  const out = document.getElementById("out");
+  out.textContent = "";
+  let allOk = true;
+  for (const [name, exp] of Object.entries(expected)) {
+    const html = await (await fetch("fixtures/" + name)).text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const got = PhishGraphFeatures.extractFeatures(doc);
+    const diffs = Object.keys(exp).filter((k) => Math.abs((got[k] ?? NaN) - exp[k]) > 1e-6)
+      .map((k) => `<tr><td>${k}</td><td>py ${exp[k]}</td><td>js ${got[k]}</td></tr>`);
+    allOk = allOk && diffs.length === 0;
+    out.insertAdjacentHTML("beforeend", `<h3 class="${diffs.length ? "bad" : "ok"}">${name}: ${diffs.length ? diffs.length + " mismatches" : "all " + Object.keys(exp).length + " features match"}</h3>` + (diffs.length ? `<table>${diffs.join("")}</table>` : ""));
+  }
+  document.title = allOk ? "PARITY OK" : "PARITY FAILED";
+  out.insertAdjacentHTML("afterbegin", `<h2 class="${allOk ? "ok" : "bad"}">${allOk ? "PARITY OK" : "PARITY FAILED"}</h2>`);
+})();
+</script>
+</body>
+</html>

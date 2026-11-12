@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PhishGraph popup harness</title>
+  <link rel="stylesheet" href="../extension/popup.css">
+  <style>html{background:#f3f4f6} body{margin:20px auto;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.15)}</style>
+  <!--
+    Renders the REAL extension popup (popup.html markup + popup.js + popup.css)
+    with a stubbed chrome.* API that asks the live backend.
+    http://127.0.0.1:8765/tests/popup_harness.html?as=<url>
+  -->
+  <script>
+    const asUrl = new URLSearchParams(location.search).get("as") || "http://example.com/";
+    const api = "http://127.0.0.1:8000";
+    let state = null;
+    window.chrome = {
+      tabs: {
+        query: async () => [{ id: 1, url: asUrl }],
+        sendMessage: async () => { throw new Error("no content script in harness"); },
+      },
+      scripting: { executeScript: async () => { throw new Error("no scripting in harness"); } },
+      runtime: {
+        openOptionsPage() {},
+        async sendMessage(msg) {
+          if (msg.type === "pg-get") return state;
+          if (msg.type === "pg-health") return { ok: (await fetch(api + "/health")).ok };
+          if (msg.type === "pg-scan-url") {
+            const r = await fetch(api + "/predict", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: msg.url, content: null, infra: true }) });
+            return { result: await r.json() };
+          }
+          if (msg.type === "pg-feedback") return { ok: true };
+        },
+      },
+    };
+  </script>
+</head>
+<body>
+  <div id="mount"></div>
+  <script>
+    (async () => {
+      const html = await (await fetch("../extension/popup.html")).text();
+      const body = new DOMParser().parseFromString(html, "text/html").body;
+      body.querySelectorAll("script").forEach((s) => s.remove());
+      body.querySelectorAll("img").forEach((i) => i.src = "../extension/" + i.getAttribute("src"));
+      document.getElementById("mount").replaceWith(...body.childNodes);
+      const s = document.createElement("script");
+      s.src = "../extension/popup.js";
+      s.onload = () => setTimeout(() => document.getElementById("scan").click(), 300);
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>
