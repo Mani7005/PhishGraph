@@ -60,22 +60,28 @@ async function check(url, features) {
     }
   }
 
-  const key = u.origin + u.pathname + u.search + (features ? "|c" : "");
+  const { backend } = await settings();
+  const endpoint = backend.replace(/\/$/, "");
+  const scanUrl = u.origin + u.pathname + u.search;
+  const key = JSON.stringify([endpoint, scanUrl, features]);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.t < CACHE_TTL_MS) return hit.result;
 
-  const { backend } = await settings();
+  if (hit) cache.delete(key);
+
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const r = await fetch(backend.replace(/\/$/, "") + "/predict", {
+    const r = await fetch(endpoint + "/predict", {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
       // the #fragment is stripped: it can hold tokens/emails and is not needed
-      body: JSON.stringify({ url: u.origin + u.pathname + u.search, content: features || null, infra: true }),
+      body: JSON.stringify({ url: scanUrl, content: features || null, infra: true }),
     });
     if (!r.ok) throw new Error(`backend returned HTTP ${r.status}`);
     const result = await r.json();
-    cache.set(key, { t: Date.now(), result });
+    if (result.infra?.complete !== false) {
+      cache.set(key, { t: Date.now(), result });
+    }
     return result;
   } catch (e) {
     return { verdict: "error", error: e.name === "AbortError" ? "backend timed out" : `cannot reach backend (${e.message})` };
@@ -142,7 +148,11 @@ async function handle(msg, sender) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  handle(msg, sender).then(sendResponse);
+  handle(msg, sender).then(sendResponse, (error) => {
+    const message = error.message;
+    const result = { verdict: "error", error: message };
+    sendResponse({ ok: false, error: message, result });
+  });
   return true; // keep the channel open for the async response
 });
 

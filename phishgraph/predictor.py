@@ -2,17 +2,9 @@
 
 Late fusion
 -----------
-The URL model and the content model were trained on different datasets (the
-HTML dataset has no URLs), so a joint meta-model cannot be fitted. We combine
-them by averaging their log-odds:
-
-    logit(p) = w_url * logit(p_url) + w_content * logit(p_content)
-
-and apply the same averaging to the two models' alert thresholds. If both
-models sit exactly at their own thresholds, the fused score sits exactly at
-the fused threshold. If the page features are missing (extension disabled
-on that page, backend called directly), the URL model's score is used alone:
-the per-modality models double as fallbacks.
+Use learned logistic fusion when a fitted artifact is available. Otherwise
+average the two log-odds and their alert thresholds. Without page features,
+use the URL model and its own thresholds.
 
 Explanations
 ------------
@@ -21,6 +13,7 @@ Per-prediction SHAP values come from XGBoost's exact TreeSHAP
 """
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -106,6 +99,9 @@ def _logit(p: float) -> float:
 
 
 def _sigmoid(z: float) -> float:
+    if z < 0:
+        exp_z = math.exp(z)
+        return exp_z / (1 + exp_z)
     return 1 / (1 + math.exp(-z))
 
 
@@ -133,10 +129,12 @@ class Predictor:
         self.url_model = _Model(models_dir / "url_model.joblib")
         cpath = models_dir / "content_model.joblib"
         self.content_model = _Model(cpath) if cpath.exists() else None
+        fusion_path = models_dir / "fusion_model.json"
+        self.fusion = json.loads(fusion_path.read_text(encoding="utf-8")) if fusion_path.exists() else None
         self.allowlist = Allowlist(models_dir / "allowlist.json")
 
     # ------------------------------------------------------------------
-    def predict(self, url: str, content: dict | None = None) -> dict:
+    def predict(self, url: str, content: dict | None = None, *, round_scores: bool = True) -> dict:
         norm, host, _, _, _ = split_url(url)
         domain = registered_domain(url)
         base = {"url": norm, "host": host, "domain": domain}
@@ -144,7 +142,7 @@ class Predictor:
         trusted = self.allowlist.check(url)
         if trusted:
             return {**base, "verdict": "trusted", "probability": 0.0, "allowlisted": trusted,
-                    "url_probability": None, "content_probability": None, "used_content": False,
+                    "url_probability": None, "content_probability": None, "used_content": False, "fusion_method": None,
                     "thresholds": None,
                     "reasons": [{"text": f"{trusted} is one of the world's most visited websites (Tranco top 10k)",
                                  "direction": "safe", "source": "allowlist", "feature": "allowlist",
@@ -160,21 +158,30 @@ class Predictor:
             p_content, c_cont = self.content_model.score(c_row)
             contribs += [("content", k, v, c_row.get(k)) for k, v in c_cont.items()]
 
+        fusion_method = "url_only"
         if p_content is None:
             p, thr = p_url, dict(self.url_model.thresholds)
         else:
-            p = _sigmoid(W_URL * _logit(p_url) + W_CONTENT * _logit(p_content))
+            weights = {"url": W_URL, "content": W_CONTENT}
+            intercept = 0.0
+            fusion_method = "fixed"
             thr = {k: _sigmoid(W_URL * _logit(self.url_model.thresholds[k])
                                + W_CONTENT * _logit(self.content_model.thresholds[k]))
                    for k in ("warn", "suspicious")}
-            # contributions are scaled by their fusion weight so they are comparable
-            contribs = [(s, k, v * (W_URL if s == "url" else W_CONTENT), x) for s, k, v, x in contribs]
+            if self.fusion is not None:
+                weights = self.fusion["weights"]
+                intercept = self.fusion["intercept"]
+                thr = self.fusion["thresholds"]
+                fusion_method = "learned"
+            p = _sigmoid(intercept + weights["url"] * _logit(p_url)
+                         + weights["content"] * _logit(p_content))
+            contribs = [(source, k, v * weights[source], x) for source, k, v, x in contribs]
 
         verdict = "phishing" if p >= thr["warn"] else "suspicious" if p >= thr["suspicious"] else "safe"
         return {**base, "verdict": verdict, "probability": round(p, 4),
-                "url_probability": round(p_url, 4),
-                "content_probability": None if p_content is None else round(p_content, 4),
-                "used_content": p_content is not None, "allowlisted": None,
+                "url_probability": round(p_url, 4) if round_scores else p_url,
+                "content_probability": round(p_content, 4) if round_scores and p_content is not None else p_content,
+                "used_content": p_content is not None, "fusion_method": fusion_method, "allowlisted": None,
                 "thresholds": {k: round(v, 4) for k, v in thr.items()},
                 "reasons": self._reasons(contribs, verdict, url_row, norm)}
 

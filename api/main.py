@@ -56,7 +56,9 @@ class FeedbackRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok", "model_version": MODEL_VERSION,
-            "content_model": predictor.content_model is not None}
+            "content_model": predictor.content_model is not None,
+            "fusion_method": ("learned" if predictor.fusion is not None else "fixed")
+            if predictor.content_model is not None else "url_only"}
 
 
 @app.post("/predict")

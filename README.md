@@ -140,11 +140,28 @@ overwhelmingly benign. So instead of resampling, the decision threshold is set f
 false-positive rate, and PR-AUC (not accuracy) is the main metric.
 
 ### 4. Late fusion
-The HTML pages in the dataset come without their URLs, so a single joint model cannot be
-trained. The two models are combined at prediction time:
+The bundled HTML dataset has no matching URLs. By default, the backend averages
+the URL and page log-odds with equal weights. With no page features, it uses the URL
+model and its own thresholds.
 
-`logit(p) = 0.5 · logit(p_url) + 0.5 · logit(p_page)`, and the same averaging is applied to the
-thresholds. When page features are unavailable, the URL model is used alone (fallback).
+To train learned fusion, prepare a JSONL file with one object per line. Each object
+contains `url`, a binary `label` (0 legitimate, 1 phishing), `content` (all 34 numeric
+page features from that URL), and `split` (`train`, `validation`, or `test`). Use newly
+labeled examples independent of both base models' training data. Keep registered
+domains disjoint across the three splits. Allowlisted rows are skipped because the
+extension bypasses model scoring on those sites.
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.train_fusion data/paired_pages.jsonl
+```
+
+The command fits Logistic Regression on the two base-model log-odds, selects the
+warning and suspicious thresholds using validation data (1% and 5% false-positive
+rate targets), and writes held-out PR-AUC, recall and false-positive rate for four
+approaches to `reports/metrics_fusion.json`. Include at least 100 legitimate validation
+examples so a 1% target is measurable. Restart the API to load
+`models/fusion_model.json`. The `/health` endpoint exposes the active fusion method.
+Re-run fusion training whenever either base model is replaced.
 
 ### 5. Extension design (usability)
 | Problem | What PhishGraph does |
@@ -199,7 +216,7 @@ python -m pytest
 * **Rendered vs static HTML.** Training pages are static HTML, while the extension sees the DOM
   after JavaScript runs. Features were chosen to be stable across both, but heavy JS sites can
   look different from the training data.
-* **Fusion weights are not learned.** No dataset has both URL and HTML for the same page.
+* **Learned fusion requires paired data.** The bundled datasets do not contain both URL and HTML for the same page.
 * **Domain age and DNS are shown as context only.** They are not model inputs, because looking
   up today's data for old, dead phishing domains would be misleading.
 * Adaptive attackers can imitate benign feature values.
@@ -208,5 +225,5 @@ python -m pytest
 1. **Infrastructure model + temporal study.** Use *Spotting the Hook* (Zenodo: DNS/WHOIS/TLS
    snapshots taken while the sites were live, Mar–Nov 2023) to train an infrastructure model,
    and compare how URL vs infrastructure features decay month by month.
-2. Learn fusion weights from the feedback log.
+2. Collect independent paired URL and page examples and evaluate learned fusion.
 3. Visual brand-similarity branch (pretrained CNN on screenshots via `chrome.tabs.captureVisibleTab`).
